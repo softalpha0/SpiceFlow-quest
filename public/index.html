@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spicenet — SpiceFlow</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="kicker">Spicenet Quest</div>
+      <h1>🌶️ SpiceFlow</h1>
+      <p class="muted">Complete steps, earn <strong>Spice Points</strong>, unlock rewards.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="card">
+      <div class="row">
+        <label class="small">Your ID (any unique string)</label>
+        <input id="userId" placeholder="e.g., your email or handle">
+        <button class="primary" id="btnLoad">Load / Link</button>
+        <button class="ghost" id="btnJoin">Start Quest (+50)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div><span id="totalPoints" style="font-weight:800;font-size:18px">0</span> pts</div>
+        <span class="badge">Scout: 100</span>
+        <span class="badge">Navigator: 300</span>
+        <span class="badge">Master: 600</span>
+      </div>
+      <div class="progress" style="margin-top:10px"><div class="bar" id="bar"></div></div>
+    </div>
+
+    <div class="grid" id="tasks"></div>
+
+    <div class="card">
+      <div class="title">Crest Testnet — Submit TX</div>
+      <p class="muted">
+        Use the <a href="http://crest-fork.vercel.app" target="_blank">SpiceFlow dApp (Crest)</a>.
+        Need test ETH? <a target="_blank" href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia">Google Cloud Faucet</a>.
+      </p>
+      <div class="row">
+        <input id="txHash" placeholder="0x...">
+        <select id="txTask">
+          <option value="testnet_mint">testnet_mint</option>
+          <option value="testnet_swap">testnet_swap</option>
+        </select>
+        <button class="primary" id="btnSubmitTx">Submit TX</button>
+      </div>
+      <p id="txMsg" class="muted"></p>
+    </div>
+  </main>
+
+  <footer class="wrap">
+    <span class="muted">©️ Spicenet • SpiceFlow Quest</span>
+  </footer>
+
+<script>
+const API = window.location.origin;
+let userId = '';
+let tasks = [];
+let claimed = new Set();
+let totalPoints = 0;
+
+function setBar(){
+  const max = 600;
+  const pct = Math.min(100, Math.round((totalPoints/max)*100));
+  document.getElementById('bar').style.width = pct + '%';
+  document.getElementById('totalPoints').innerText = totalPoints;
+}
+function renderTasks(){
+  const grid = document.getElementById('tasks');
+  grid.innerHTML = '';
+  tasks.forEach(t=>{
+    const done = claimed.has(t.id);
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="title">${t.id.replaceAll('_',' ')} <span class="muted">• +${t.points} pts</span></div>
+      <div class="row">
+        ${t.type!=='tx'?`<input id="proof-${t.id}" placeholder="Proof link (optional)">`:''}
+        <button class="${done?'ghost':'primary'}" ${done?'disabled':''} onclick="claim('${t.id}')">${done?'Claimed':'Claim'}</button>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+async function loadTasks(){
+  const res = await fetch(API + '/api/spiceflow/tasks'); tasks = await res.json();
+}
+async function loadProgress(){
+  if(!userId) return;
+  const res = await fetch(API + '/api/spiceflow/progress/' + encodeURIComponent(userId));
+  const data = await res.json();
+  claimed = new Set((data.claims||[]).map(c=>c.taskId));
+  totalPoints = (data.user && data.user.points) || 0;
+  setBar(); renderTasks();
+}
+async function joinQuest(){
+  if(!userId) return alert('Enter your ID first.');
+  const res = await fetch(API + '/api/spiceflow/join',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ userId })
+  });
+  const data = await res.json();
+  totalPoints = data.totalPoints || totalPoints;
+  await loadProgress();
+  alert(data.message || 'Joined!');
+}
+async function claim(taskId){
+  if(!userId) return alert('Enter your ID first.');
+  const proofEl = document.getElementById('proof-'+taskId);
+  const proof = proofEl?proofEl.value:'';
+  const res = await fetch(API + '/api/spiceflow/claim',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ userId, taskId, proof })
+  });
+  const data = await res.json();
+  totalPoints = data.totalPoints || totalPoints;
+  await loadProgress();
+  alert(data.message || 'Claimed!');
+}
+async function submitTx(){
+  if(!userId) return alert('Enter your ID first.');
+  const txHash = document.getElementById('txHash').value.trim();
+  const taskId = document.getElementById('txTask').value;
+  const res = await fetch(API + '/api/spiceflow/submit-tx',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ userId, taskId, txHash })
+  });
+  const data = await res.json();
+  totalPoints = data.totalPoints || totalPoints;
+  document.getElementById('txMsg').innerText = data.message || '';
+  await loadProgress();
+}
+document.getElementById('btnLoad').onclick=()=>{userId=document.getElementById('userId').value.trim(); loadProgress();}
+document.getElementById('btnJoin').onclick=joinQuest;
+document.getElementById('btnSubmitTx').onclick=submitTx;
+(async function(){await loadTasks();renderTasks();setBar();})();
+</script>
+</body>
+</html>
